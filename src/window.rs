@@ -131,7 +131,7 @@ fn enable_resizing(ctx: &egui::Context, ui: &mut egui::Ui) {
 
     // Add invisible interactive areas for each handle
     for (rect, dir) in handles {
-        let response = ui.interact(rect, egui::Id::new(format!("{:?}", dir)), egui::Sense::drag());
+        let response = ui.interact(rect, egui::Id::new(format!("{:?}", dir)), egui::Sense::click());
         
         // Add hover cursor
         let cursor = match dir {
@@ -143,7 +143,7 @@ fn enable_resizing(ctx: &egui::Context, ui: &mut egui::Ui) {
             ctx.set_cursor_icon(cursor);
         }
         
-        if response.drag_started() {
+        if response.is_pointer_button_down_on() {
             ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(dir));
         }
     }
@@ -156,25 +156,26 @@ pub fn dw(ctx: &egui::Context, texture: &egui::TextureHandle, width: f32, height
         let inertia = |factor: f32| egui::vec2(-shake_offset.x * factor, -shake_offset.y * factor);
 
         // Title Bar
-        let (mut title_rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 18.0), egui::Sense::hover());
-        title_rect = title_rect.translate(inertia(0.8));
+        let (mut titlerect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 18.0), egui::Sense::click());
+        titlerect = titlerect.translate(inertia(0.8));
         
-        if ui.interact(title_rect, egui::Id::new("drag"), egui::Sense::drag()).dragged() {
+        let response = ui.interact(titlerect, egui::Id::new("drag"), egui::Sense::click());
+        if response.is_pointer_button_down_on() {
             ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
         }
 
-        ui.painter().rect_filled(title_rect, 0.0, NAVY);
+        ui.painter().rect_filled(titlerect, 0.0, NAVY);
         
         // Window Icon (16x16)
-        let icon_rect = egui::Rect::from_min_size(title_rect.left_center() + egui::vec2(2.0, -8.0), egui::vec2(16.0, 16.0)).translate(inertia(1.2));
+        let icon_rect = egui::Rect::from_min_size(titlerect.left_center() + egui::vec2(2.0, -8.0), egui::vec2(16.0, 16.0)).translate(inertia(1.2));
         d_icon(ui.painter(), icon_rect);
 
         // Bold text, offset by 20px to make space for the icon
-        ui.painter().text(title_rect.left_center() + egui::vec2(22.0, 0.0), egui::Align2::LEFT_CENTER, "Notepad", egui::FontId::proportional(12.0), WHITE);
+        ui.painter().text(titlerect.left_center() + egui::vec2(22.0, 0.0), egui::Align2::LEFT_CENTER, "Notepad", egui::FontId::proportional(12.0), WHITE);
         
         // Caption Buttons
         // Margin 2 from right, spacing 0 between min/max, spacing 2 between max/close
-        let close_rect = egui::Rect::from_min_size(title_rect.right_top() + egui::vec2(-16.0 - 2.0, 2.0), egui::vec2(16.0, 14.0)).translate(inertia(1.5));
+        let close_rect = egui::Rect::from_min_size(titlerect.right_top() + egui::vec2(-16.0 - 2.0, 2.0), egui::vec2(16.0, 14.0)).translate(inertia(1.5));
         let max_rect = egui::Rect::from_min_size(close_rect.left_top() + egui::vec2(-16.0 - 2.0, 0.0), egui::vec2(16.0, 14.0)).translate(inertia(1.4));
         let min_rect = egui::Rect::from_min_size(max_rect.left_top() + egui::vec2(-16.0, 0.0), egui::vec2(16.0, 14.0)).translate(inertia(1.3));
 

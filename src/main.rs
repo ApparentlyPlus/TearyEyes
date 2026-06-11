@@ -11,13 +11,14 @@ struct W95Playback {
     data: ExportData,
     current_frame: usize,
     last_update: std::time::Instant,
+    lastud: std::time::Instant,
     image: egui::ColorImage,
-    texture: Option<egui::TextureHandle>,
+    texture: egui::TextureHandle,
     flip_h: bool,
     flip_v: bool,
     shake_frames: usize,
-    target_pos: Option<egui::Pos2>,
-    drift_velocity: egui::Vec2,
+    targpos: Option<egui::Pos2>,
+    dv: egui::Vec2,
 }
 
 impl W95Playback {
@@ -62,17 +63,19 @@ impl W95Playback {
 
         // Initialize our player with the first frame as a white canvas
         let image = egui::ColorImage::new([data.width, data.height], egui::Color32::WHITE);
+        let texture = cc.egui_ctx.load_texture("video_frame", image.clone(), egui::TextureOptions::NEAREST);
         Self {
             data,
             current_frame: 0,
             last_update: std::time::Instant::now(),
+            lastud: std::time::Instant::now(),
             image,
-            texture: None,
+            texture,
             flip_h: false,
             flip_v: false,
             shake_frames: 0,
-            target_pos: None,
-            drift_velocity: egui::vec2(0.0, 0.0),
+            targpos: None,
+            dv: egui::vec2(0.0, 0.0),
         }
     }
 }
@@ -83,8 +86,8 @@ impl eframe::App for W95Playback {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let now = std::time::Instant::now();
         
-        // 30 FPS update (1.0 / 30.0 = 0.0333 seconds)
-        if now.duration_since(self.last_update).as_secs_f32() > 0.0333 {
+        // 1. Video Frame Update (30 FPS)
+        if now.duration_since(self.last_update).as_secs_f32() >= 0.0333 {
             self.last_update = now;
             
             // Loop frame counter
@@ -102,7 +105,7 @@ impl eframe::App for W95Playback {
                 self.shake_frames = 5;
                 let time = ctx.input(|i| i.time);
                 let angle = time as f32 * 100.0;
-                self.drift_velocity += egui::vec2(angle.cos() * 2.0, angle.sin() * 2.0);
+                self.dv += egui::vec2(angle.cos() * 2.0, angle.sin() * 2.0);
             }
 
             for &[x, y] in frame_data.black_pixels {
@@ -128,12 +131,11 @@ impl eframe::App for W95Playback {
                 self.shake_frames -= 1;
             }
             
-            // Upload to GPU
-            self.texture = Some(ctx.load_texture("video_frame", self.image.clone(), egui::TextureOptions::NEAREST));
+            // Upload to GPU in place using TextureHandle::set
+            self.texture.set(self.image.clone(), egui::TextureOptions::NEAREST);
         }
 
-        ctx.request_repaint();
-
+        // Window Position Update
         let mut shake_offset = egui::vec2(0.0, 0.0);
         if self.shake_frames > 0 {
             let time = ctx.input(|i| i.time);
@@ -141,48 +143,60 @@ impl eframe::App for W95Playback {
             shake_offset.y = (time * 80.0).cos() as f32 * 3.0;
         }
 
-        if self.target_pos.is_none() {
-            self.target_pos = ctx.input(|i| i.viewport().inner_rect).map(|r| r.min);
-        }
+        if now.duration_since(self.lastud).as_secs_f32() >= 0.0166 {
+            self.lastud = now;
 
-        let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-
-        if let Some(mut tpos) = self.target_pos {
-            if let Some(rp) = ctx.input(|i| i.viewport().inner_rect).map(|r| r.min) {
-                if rp.distance(tpos) > 50.0 && self.shake_frames == 0 {
-                    tpos = rp;
-                }
+            if self.targpos.is_none() {
+                self.targpos = ctx.input(|i| i.viewport().inner_rect).map(|r| r.min);
             }
 
-            if !maximized {
-                tpos += self.drift_velocity;
-                self.drift_velocity *= 0.85; // friction
-                
-                // Keep the window inside the monitor
-                if let Some(monitor_size) = ctx.input(|i| i.viewport().monitor_size) {
-                    if let Some(window_size) = ctx.input(|i| i.viewport().inner_rect).map(|r| r.size()) {
-                        tpos.x = tpos.x.clamp(0.0, (monitor_size.x - window_size.x).max(0.0));
-                        tpos.y = tpos.y.clamp(0.0, (monitor_size.y - window_size.y).max(0.0));
+            let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+
+            if let Some(mut tpos) = self.targpos {
+                if let Some(rp) = ctx.input(|i| i.viewport().inner_rect).map(|r| r.min) {
+                    if rp.distance(tpos) > 50.0 && self.shake_frames == 0 {
+                        tpos = rp;
                     }
                 }
-                
-                self.target_pos = Some(tpos);
 
-                if self.shake_frames > 0 || self.drift_velocity.length_sq() > 0.01 {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(tpos + shake_offset));
+                if !maximized {
+                    tpos += self.dv;
+                    self.dv *= 0.85; // friction
+                    
+                    // Keep the window inside the monitor
+                    if let Some(monitor_size) = ctx.input(|i| i.viewport().monitor_size) {
+                        if let Some(window_size) = ctx.input(|i| i.viewport().inner_rect).map(|r| r.size()) {
+                            tpos.x = tpos.x.clamp(0.0, (monitor_size.x - window_size.x).max(0.0));
+                            tpos.y = tpos.y.clamp(0.0, (monitor_size.y - window_size.y).max(0.0));
+                        }
+                    }
+                    
+                    self.targpos = Some(tpos);
+
+                    if self.shake_frames > 0 || self.dv.length_sq() > 0.01 {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(tpos + shake_offset));
+                    }
+                } else {
+                    self.dv = egui::vec2(0.0, 0.0);
+                    self.targpos = Some(tpos);
                 }
-            } else {
-                self.drift_velocity = egui::vec2(0.0, 0.0);
-                self.target_pos = Some(tpos);
             }
         }
 
-        let texture = self.texture.get_or_insert_with(|| {
-            ctx.load_texture("video_frame", self.image.clone(), egui::TextureOptions::NEAREST)
-        });
+        // Scheduling the next Repaint to avoid busy looping
+        let next_video_time = self.last_update + std::time::Duration::from_secs_f32(0.0333);
+        let mut next_wakeup = next_video_time;
+        
+        if self.shake_frames > 0 || self.dv.length_sq() > 0.01 {
+            let next_physics_time = self.lastud + std::time::Duration::from_secs_f32(0.0166);
+            next_wakeup = next_wakeup.min(next_physics_time);
+        }
+        
+        let delay = next_wakeup.saturating_duration_since(std::time::Instant::now());
+        ctx.request_repaint_after(delay);
 
         // Delegate rendering to the layout file
-        window::dw(ctx, texture, self.data.width as f32, self.data.height as f32, &mut self.flip_h, &mut self.flip_v, shake_offset);
+        window::dw(ctx, &self.texture, self.data.width as f32, self.data.height as f32, &mut self.flip_h, &mut self.flip_v, shake_offset);
     }
 }
 
@@ -245,7 +259,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([ww, wh])
             .with_decorations(false) // Borderless OS window!
-            .with_transparent(true)
+            .with_transparent(false)
             .with_icon(generate_icon()),
         ..Default::default()
     };
