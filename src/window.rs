@@ -149,12 +149,15 @@ fn enable_resizing(ctx: &egui::Context, ui: &mut egui::Ui) {
     }
 }
 
-pub fn dw(ctx: &egui::Context, texture: &egui::TextureHandle, width: f32, height: f32, flip_h: &mut bool, flip_v: &mut bool, shake: bool) {
+pub fn dw(ctx: &egui::Context, texture: &egui::TextureHandle, width: f32, height: f32, flip_h: &mut bool, flip_v: &mut bool, shake_offset: egui::Vec2) {
     let frame = egui::Frame::none().fill(GRAY).inner_margin(4.0);
 
     egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
+        let inertia = |factor: f32| egui::vec2(-shake_offset.x * factor, -shake_offset.y * factor);
+
         // Title Bar
-        let (title_rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 18.0), egui::Sense::hover());
+        let (mut title_rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 18.0), egui::Sense::hover());
+        title_rect = title_rect.translate(inertia(0.8));
         
         if ui.interact(title_rect, egui::Id::new("drag"), egui::Sense::drag()).dragged() {
             ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
@@ -163,7 +166,7 @@ pub fn dw(ctx: &egui::Context, texture: &egui::TextureHandle, width: f32, height
         ui.painter().rect_filled(title_rect, 0.0, NAVY);
         
         // Window Icon (16x16)
-        let icon_rect = egui::Rect::from_min_size(title_rect.left_center() + egui::vec2(2.0, -8.0), egui::vec2(16.0, 16.0));
+        let icon_rect = egui::Rect::from_min_size(title_rect.left_center() + egui::vec2(2.0, -8.0), egui::vec2(16.0, 16.0)).translate(inertia(1.2));
         d_icon(ui.painter(), icon_rect);
 
         // Bold text, offset by 20px to make space for the icon
@@ -171,9 +174,9 @@ pub fn dw(ctx: &egui::Context, texture: &egui::TextureHandle, width: f32, height
         
         // Caption Buttons
         // Margin 2 from right, spacing 0 between min/max, spacing 2 between max/close
-        let close_rect = egui::Rect::from_min_size(title_rect.right_top() + egui::vec2(-16.0 - 2.0, 2.0), egui::vec2(16.0, 14.0));
-        let max_rect = egui::Rect::from_min_size(close_rect.left_top() + egui::vec2(-16.0 - 2.0, 0.0), egui::vec2(16.0, 14.0));
-        let min_rect = egui::Rect::from_min_size(max_rect.left_top() + egui::vec2(-16.0, 0.0), egui::vec2(16.0, 14.0));
+        let close_rect = egui::Rect::from_min_size(title_rect.right_top() + egui::vec2(-16.0 - 2.0, 2.0), egui::vec2(16.0, 14.0)).translate(inertia(1.5));
+        let max_rect = egui::Rect::from_min_size(close_rect.left_top() + egui::vec2(-16.0 - 2.0, 0.0), egui::vec2(16.0, 14.0)).translate(inertia(1.4));
+        let min_rect = egui::Rect::from_min_size(max_rect.left_top() + egui::vec2(-16.0, 0.0), egui::vec2(16.0, 14.0)).translate(inertia(1.3));
 
         // Minimize
         if d_caption_btn(ui, min_rect, "min_btn", |painter, r| {
@@ -271,7 +274,8 @@ pub fn dw(ctx: &egui::Context, texture: &egui::TextureHandle, width: f32, height
                 new_h = height.max(10.0);
             }
 
-            let (canvas_rect, _) = ui.allocate_exact_size(egui::vec2(new_w, new_h), egui::Sense::hover());
+            let (mut canvas_rect, _) = ui.allocate_exact_size(egui::vec2(new_w, new_h), egui::Sense::hover());
+            canvas_rect = canvas_rect.translate(inertia(0.3));
             
             let mut uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
             if *flip_h {
@@ -299,19 +303,19 @@ pub fn dw(ctx: &egui::Context, texture: &egui::TextureHandle, width: f32, height
     d_bevel(&painter, r, LIGHT_GRAY, BLACK);
     d_bevel(&painter, r.shrink(1.0), WHITE, DARK_GRAY);
 
-    if shake {
+    if shake_offset.length_sq() > 0.0 {
         let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("smear")));
         let time = ctx.input(|i| i.time);
         
         // Horizontal glitch streaks
         for i in 0..15 {
-            let pseudo_rand = (time * 1000.0 + i as f64) as u64 * 12345;
-            let x = ((pseudo_rand >> 4) % r.width() as u64) as f32;
-            let y = ((pseudo_rand >> 8) % r.height() as u64) as f32;
-            let w = ((pseudo_rand >> 12) % 150) as f32 + 20.0;
-            let h = ((pseudo_rand >> 16) % 8) as f32 + 2.0;
-            
-            let color = match pseudo_rand % 4 {
+            let prand = (time * 1000.0 + i as f64) as u64 * 12345;
+            let x = ((prand >> 4) % r.width() as u64) as f32;
+            let y = ((prand >> 8) % r.height() as u64) as f32;
+            let w = ((prand >> 12) % 150) as f32 + 20.0;
+            let h = ((prand >> 16) % 8) as f32 + 2.0;
+
+            let color = match prand % 4 {
                 0 => NAVY,
                 1 => GRAY,
                 2 => WHITE,
@@ -323,21 +327,21 @@ pub fn dw(ctx: &egui::Context, texture: &egui::TextureHandle, width: f32, height
         
         // Melting vertical drips
         for i in 0..60 {
-            let pseudo_rand = (time * 1000.0 + i as f64 * 7.0) as u64 * 54321;
-            let x = ((pseudo_rand >> 3) % r.width() as u64) as f32;
-            let y = ((pseudo_rand >> 7) % r.height() as u64) as f32;
-            let len = ((pseudo_rand >> 11) % 60) as f32 + 10.0;
-            
+            let prand = (time * 1000.0 + i as f64 * 7.0) as u64 * 54321;
+            let x = ((prand >> 3) % r.width() as u64) as f32;
+            let y = ((prand >> 7) % r.height() as u64) as f32;
+            let len = ((prand >> 11) % 60) as f32 + 10.0;
+
             // Sample a color typical of the UI at that Y position
             let color = if y < 22.0 {
                 NAVY
             } else if y < 45.0 {
-                if pseudo_rand % 2 == 0 { BLACK } else { GRAY }
+                if prand % 2 == 0 { BLACK } else { GRAY }
             } else {
-                if pseudo_rand % 3 == 0 { WHITE } else if pseudo_rand % 3 == 1 { DARK_GRAY } else { BLACK }
+                if prand % 3 == 0 { WHITE } else if prand % 3 == 1 { DARK_GRAY } else { BLACK }
             };
-            
-            p.line_segment([egui::pos2(x, y), egui::pos2(x, y + len)], egui::Stroke::new(if pseudo_rand % 2 == 0 { 2.0 } else { 4.0 }, color));
+
+            p.line_segment([egui::pos2(x, y), egui::pos2(x, y + len)], egui::Stroke::new(if prand % 2 == 0 { 2.0 } else { 4.0 }, color));
         }
     }
 }

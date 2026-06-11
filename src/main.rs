@@ -16,7 +16,8 @@ struct W95Playback {
     flip_h: bool,
     flip_v: bool,
     shake_frames: usize,
-    original_pos: Option<egui::Pos2>,
+    target_pos: Option<egui::Pos2>,
+    drift_velocity: egui::Vec2,
 }
 
 impl W95Playback {
@@ -70,7 +71,8 @@ impl W95Playback {
             flip_h: false,
             flip_v: false,
             shake_frames: 0,
-            original_pos: None,
+            target_pos: None,
+            drift_velocity: egui::vec2(0.0, 0.0),
         }
     }
 }
@@ -98,6 +100,9 @@ impl eframe::App for W95Playback {
             let frame_data = &self.data.frames[self.current_frame];
             if frame_data.shake {
                 self.shake_frames = 5;
+                let time = ctx.input(|i| i.time);
+                let angle = time as f32 * 100.0;
+                self.drift_velocity += egui::vec2(angle.cos() * 2.0, angle.sin() * 2.0);
             }
 
             for &[x, y] in frame_data.black_pixels {
@@ -120,24 +125,7 @@ impl eframe::App for W95Playback {
             self.current_frame += 1;
             
             if self.shake_frames > 0 {
-                if self.original_pos.is_none() {
-                    self.original_pos = ctx.input(|i| i.viewport().inner_rect).map(|r| r.min);
-                }
-                
                 self.shake_frames -= 1;
-                
-                if let Some(pos) = self.original_pos {
-                    let time = ctx.input(|i| i.time);
-                    let dx = (time * 60.0).sin() as f32 * 6.0;
-                    let dy = (time * 80.0).cos() as f32 * 6.0;
-                    ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos + egui::vec2(dx, dy)));
-                }
-                
-                if self.shake_frames == 0 {
-                    if let Some(pos) = self.original_pos.take() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
-                    }
-                }
             }
             
             // Upload to GPU
@@ -146,12 +134,55 @@ impl eframe::App for W95Playback {
 
         ctx.request_repaint();
 
+        let mut shake_offset = egui::vec2(0.0, 0.0);
+        if self.shake_frames > 0 {
+            let time = ctx.input(|i| i.time);
+            shake_offset.x = (time * 60.0).sin() as f32 * 3.0;
+            shake_offset.y = (time * 80.0).cos() as f32 * 3.0;
+        }
+
+        if self.target_pos.is_none() {
+            self.target_pos = ctx.input(|i| i.viewport().inner_rect).map(|r| r.min);
+        }
+
+        let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+
+        if let Some(mut tpos) = self.target_pos {
+            if let Some(rp) = ctx.input(|i| i.viewport().inner_rect).map(|r| r.min) {
+                if rp.distance(tpos) > 50.0 && self.shake_frames == 0 {
+                    tpos = rp;
+                }
+            }
+
+            if !maximized {
+                tpos += self.drift_velocity;
+                self.drift_velocity *= 0.85; // friction
+                
+                // Keep the window inside the monitor
+                if let Some(monitor_size) = ctx.input(|i| i.viewport().monitor_size) {
+                    if let Some(window_size) = ctx.input(|i| i.viewport().inner_rect).map(|r| r.size()) {
+                        tpos.x = tpos.x.clamp(0.0, (monitor_size.x - window_size.x).max(0.0));
+                        tpos.y = tpos.y.clamp(0.0, (monitor_size.y - window_size.y).max(0.0));
+                    }
+                }
+                
+                self.target_pos = Some(tpos);
+
+                if self.shake_frames > 0 || self.drift_velocity.length_sq() > 0.01 {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(tpos + shake_offset));
+                }
+            } else {
+                self.drift_velocity = egui::vec2(0.0, 0.0);
+                self.target_pos = Some(tpos);
+            }
+        }
+
         let texture = self.texture.get_or_insert_with(|| {
             ctx.load_texture("video_frame", self.image.clone(), egui::TextureOptions::NEAREST)
         });
 
         // Delegate rendering to the layout file
-        window::dw(ctx, texture, self.data.width as f32, self.data.height as f32, &mut self.flip_h, &mut self.flip_v, self.shake_frames > 0);
+        window::dw(ctx, texture, self.data.width as f32, self.data.height as f32, &mut self.flip_h, &mut self.flip_v, shake_offset);
     }
 }
 
