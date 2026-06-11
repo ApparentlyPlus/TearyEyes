@@ -149,7 +149,7 @@ fn enable_resizing(ctx: &egui::Context, ui: &mut egui::Ui) {
     }
 }
 
-pub fn dw(ctx: &egui::Context, texture: &egui::TextureHandle, width: f32, height: f32, flip_h: &mut bool, flip_v: &mut bool) {
+pub fn dw(ctx: &egui::Context, texture: &egui::TextureHandle, width: f32, height: f32, flip_h: &mut bool, flip_v: &mut bool, shake: bool) {
     let frame = egui::Frame::none().fill(GRAY).inner_margin(4.0);
 
     egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
@@ -298,4 +298,46 @@ pub fn dw(ctx: &egui::Context, texture: &egui::TextureHandle, width: f32, height
     
     d_bevel(&painter, r, LIGHT_GRAY, BLACK);
     d_bevel(&painter, r.shrink(1.0), WHITE, DARK_GRAY);
+
+    if shake {
+        let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("smear")));
+        let time = ctx.input(|i| i.time);
+        
+        // Horizontal glitch streaks
+        for i in 0..15 {
+            let pseudo_rand = (time * 1000.0 + i as f64) as u64 * 12345;
+            let x = ((pseudo_rand >> 4) % r.width() as u64) as f32;
+            let y = ((pseudo_rand >> 8) % r.height() as u64) as f32;
+            let w = ((pseudo_rand >> 12) % 150) as f32 + 20.0;
+            let h = ((pseudo_rand >> 16) % 8) as f32 + 2.0;
+            
+            let color = match pseudo_rand % 4 {
+                0 => NAVY,
+                1 => GRAY,
+                2 => WHITE,
+                _ => BLACK,
+            };
+            
+            p.rect_filled(egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(w, h)), 0.0, color);
+        }
+        
+        // Melting vertical drips
+        for i in 0..60 {
+            let pseudo_rand = (time * 1000.0 + i as f64 * 7.0) as u64 * 54321;
+            let x = ((pseudo_rand >> 3) % r.width() as u64) as f32;
+            let y = ((pseudo_rand >> 7) % r.height() as u64) as f32;
+            let len = ((pseudo_rand >> 11) % 60) as f32 + 10.0;
+            
+            // Sample a color typical of the UI at that Y position
+            let color = if y < 22.0 {
+                NAVY
+            } else if y < 45.0 {
+                if pseudo_rand % 2 == 0 { BLACK } else { GRAY }
+            } else {
+                if pseudo_rand % 3 == 0 { WHITE } else if pseudo_rand % 3 == 1 { DARK_GRAY } else { BLACK }
+            };
+            
+            p.line_segment([egui::pos2(x, y), egui::pos2(x, y + len)], egui::Stroke::new(if pseudo_rand % 2 == 0 { 2.0 } else { 4.0 }, color));
+        }
+    }
 }

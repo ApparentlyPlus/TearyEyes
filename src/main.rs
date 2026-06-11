@@ -15,6 +15,8 @@ struct W95Playback {
     texture: Option<egui::TextureHandle>,
     flip_h: bool,
     flip_v: bool,
+    shake_frames: usize,
+    original_pos: Option<egui::Pos2>,
 }
 
 impl W95Playback {
@@ -67,6 +69,8 @@ impl W95Playback {
             texture: None,
             flip_h: false,
             flip_v: false,
+            shake_frames: 0,
+            original_pos: None,
         }
     }
 }
@@ -92,6 +96,10 @@ impl eframe::App for W95Playback {
 
             // Draw current frame deltas
             let frame_data = &self.data.frames[self.current_frame];
+            if frame_data.shake {
+                self.shake_frames = 5;
+            }
+
             for &[x, y] in frame_data.black_pixels {
                 if x < self.data.width && y < self.data.height {
                     let idx = y * self.data.width + x;
@@ -111,6 +119,27 @@ impl eframe::App for W95Playback {
 
             self.current_frame += 1;
             
+            if self.shake_frames > 0 {
+                if self.original_pos.is_none() {
+                    self.original_pos = ctx.input(|i| i.viewport().inner_rect).map(|r| r.min);
+                }
+                
+                self.shake_frames -= 1;
+                
+                if let Some(pos) = self.original_pos {
+                    let time = ctx.input(|i| i.time);
+                    let dx = (time * 60.0).sin() as f32 * 6.0;
+                    let dy = (time * 80.0).cos() as f32 * 6.0;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos + egui::vec2(dx, dy)));
+                }
+                
+                if self.shake_frames == 0 {
+                    if let Some(pos) = self.original_pos.take() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
+                    }
+                }
+            }
+            
             // Upload to GPU
             self.texture = Some(ctx.load_texture("video_frame", self.image.clone(), egui::TextureOptions::NEAREST));
         }
@@ -122,7 +151,7 @@ impl eframe::App for W95Playback {
         });
 
         // Delegate rendering to the layout file
-        window::dw(ctx, texture, self.data.width as f32, self.data.height as f32, &mut self.flip_h, &mut self.flip_v);
+        window::dw(ctx, texture, self.data.width as f32, self.data.height as f32, &mut self.flip_h, &mut self.flip_v, self.shake_frames > 0);
     }
 }
 
