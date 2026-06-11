@@ -85,14 +85,29 @@ pub fn d_menu_item(ui: &mut egui::Ui, text: &str) -> egui::Response {
     response
 }
 
-// Jibberish now, soon to be legit
+// Notepad-ish
 fn d_icon(painter: &egui::Painter, rect: egui::Rect) {
     let r = rect.shrink(2.0);
-    // Red, Blue, Green, Yellow 4-square flag
-    painter.rect_filled(egui::Rect::from_min_max(r.left_top(), r.center()), 0.0, egui::Color32::from_rgb(255, 100, 100)); // Red
-    painter.rect_filled(egui::Rect::from_min_max(egui::pos2(r.center().x, r.top()), egui::pos2(r.right(), r.center().y)), 0.0, egui::Color32::from_rgb(100, 100, 255)); // Blue
-    painter.rect_filled(egui::Rect::from_min_max(egui::pos2(r.left(), r.center().y), egui::pos2(r.center().x, r.bottom())), 0.0, egui::Color32::from_rgb(100, 255, 100)); // Green
-    painter.rect_filled(egui::Rect::from_min_max(r.center(), r.right_bottom()), 0.0, egui::Color32::from_rgb(255, 255, 100)); // Yellow
+    
+    // Notepad background
+    painter.rect_filled(r, 1.0, egui::Color32::from_rgb(240, 240, 240));
+    
+    // Notepad binding
+    let binding_rect = egui::Rect::from_min_max(r.left_top(), egui::pos2(r.right(), r.top() + r.height() * 0.25));
+    painter.rect_filled(binding_rect, 1.0, egui::Color32::from_rgb(100, 150, 255));
+    
+    // Horizontal lines
+    let ls = egui::Stroke::new(1.0, egui::Color32::from_rgb(200, 200, 200));
+    for i in 1..=3 {
+        let y = binding_rect.bottom() + (r.height() * 0.75) * (i as f32 / 4.0);
+        painter.line_segment(
+            [egui::pos2(r.left() + 2.0, y), egui::pos2(r.right() - 2.0, y)],
+            ls,
+        );
+    }
+    
+    // Outline
+    painter.rect_stroke(r, 1.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(100, 100, 100)));
 }
 
 // Invisible resize handles around the edges

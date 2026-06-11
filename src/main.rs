@@ -126,6 +126,51 @@ impl eframe::App for W95Playback {
     }
 }
 
+fn generate_icon() -> std::sync::Arc<egui::IconData> {
+    let width = 32;
+    let height = 32;
+    let mut rgba = vec![0; (width * height * 4) as usize];
+
+    for y in 0..height {
+        for x in 0..width {
+            let idx = ((y * width + x) * 4) as usize;
+            
+            // Background padding (transparent)
+            if x < 2 || x >= width - 2 || y < 2 || y >= height - 2 {
+                rgba[idx..idx + 4].copy_from_slice(&[0, 0, 0, 0]);
+                continue;
+            }
+            
+            // Outline
+            if x == 2 || x == width - 3 || y == 2 || y == height - 3 {
+                rgba[idx..idx + 4].copy_from_slice(&[100, 100, 100, 255]);
+                continue;
+            }
+
+            // Notepad background
+            rgba[idx..idx + 4].copy_from_slice(&[240, 240, 240, 255]);
+
+            // Top binding
+            if y > 2 && y < 10 {
+                rgba[idx..idx + 4].copy_from_slice(&[100, 150, 255, 255]);
+            }
+            
+            // Lines
+            if x > 4 && x < width - 4 {
+                if y == 14 || y == 20 || y == 26 {
+                    rgba[idx..idx + 4].copy_from_slice(&[200, 200, 200, 255]);
+                }
+            }
+        }
+    }
+
+    std::sync::Arc::new(egui::IconData {
+        rgba,
+        width,
+        height,
+    })
+}
+
 fn main() -> eframe::Result<()> {
     let data = AngryMan::ldata();
 
@@ -140,12 +185,13 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([ww, wh])
             .with_decorations(false) // Borderless OS window!
-            .with_transparent(true),
+            .with_transparent(true)
+            .with_icon(generate_icon()),
         ..Default::default()
     };
 
     eframe::run_native(
-        "TearyEyes Retropad",
+        "TearyEyes",
         options,
         Box::new(|cc| Box::new(W95Playback::new(cc, data))),
     )
