@@ -86,9 +86,14 @@ impl eframe::App for W95Playback {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let now = std::time::Instant::now();
         
-        // 1. Video Frame Update (30 FPS)
-        if now.duration_since(self.last_update).as_secs_f32() >= 0.0333 {
-            self.last_update = now;
+        // Video Frame Update (30 FPS)
+        let dt = now.duration_since(self.last_update).as_secs_f32();
+        if dt >= 0.0333333 {
+            if dt > 0.1 {
+                self.last_update = now;
+            } else {
+                self.last_update += std::time::Duration::from_secs_f32(0.0333333);
+            }
             
             // Loop frame counter
             if self.current_frame >= self.data.frames.len() {
@@ -143,8 +148,13 @@ impl eframe::App for W95Playback {
             shake_offset.y = (time * 80.0).cos() as f32 * 3.0;
         }
 
-        if now.duration_since(self.lastud).as_secs_f32() >= 0.0166 {
-            self.lastud = now;
+        let dt_phys = now.duration_since(self.lastud).as_secs_f32();
+        if dt_phys >= 0.0166666 {
+            if dt_phys > 0.1 {
+                self.lastud = now;
+            } else {
+                self.lastud += std::time::Duration::from_secs_f32(0.0166666);
+            }
 
             if self.targpos.is_none() {
                 self.targpos = ctx.input(|i| i.viewport().inner_rect).map(|r| r.min);
@@ -183,17 +193,8 @@ impl eframe::App for W95Playback {
             }
         }
 
-        // Scheduling the next Repaint to avoid busy looping
-        let next_video_time = self.last_update + std::time::Duration::from_secs_f32(0.0333);
-        let mut next_wakeup = next_video_time;
-        
-        if self.shake_frames > 0 || self.dv.length_sq() > 0.01 {
-            let next_physics_time = self.lastud + std::time::Duration::from_secs_f32(0.0166);
-            next_wakeup = next_wakeup.min(next_physics_time);
-        }
-        
-        let delay = next_wakeup.saturating_duration_since(std::time::Instant::now());
-        ctx.request_repaint_after(delay);
+        // Scheduling the next Repaint to avoid busy looping while staying blazing fast
+        ctx.request_repaint_after(std::time::Duration::from_millis(8));
 
         // Delegate rendering to the layout file
         window::dw(ctx, &self.texture, self.data.width as f32, self.data.height as f32, &mut self.flip_h, &mut self.flip_v, shake_offset);
