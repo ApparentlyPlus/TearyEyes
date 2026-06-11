@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use eframe::egui;
 
 mod window; // Win95 window layout
